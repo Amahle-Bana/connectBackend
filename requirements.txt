@@ -3,7 +3,6 @@ annotated-types==0.7.0
 ansicon==1.89.0
 anyio==4.10.0
 asgiref==3.8.1
-awsebcli==3.25.3
 bcrypt==5.0.0
 beautifulsoup4==4.13.4
 billiard==4.2.4
@@ -15,7 +14,7 @@ cachetools==5.5.2
 celery==5.6.0
 cement==2.10.14
 certifi==2025.4.26
-cffi==1.17.1
+cffi==2.0.0
 charset-normalizer==3.4.2
 click==8.3.1
 click-didyoumean==0.3.1
@@ -61,7 +60,6 @@ pandas==2.3.2
 paramiko==4.0.0
 pathspec==0.12.1
 prompt_toolkit==3.0.52
-psycopg2==2.9.10
 psycopg2-binary==2.9.10
 pyasn1==0.6.1
 pyasn1_modules==0.4.2
