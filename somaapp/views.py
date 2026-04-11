@@ -22,6 +22,34 @@ import requests
 from django.http import HttpResponse
 
 
+def _issue_jwt_auth_response(user, message, http_status=status.HTTP_200_OK):
+    """Issue JWT in cookie + response body (direct login/signup when OTP is disabled)."""
+    payload = {
+        'id': user.id,
+        'exp': datetime.datetime.utcnow() + datetime.timedelta(days=7),
+        'iat': datetime.datetime.utcnow(),
+    }
+    token = jwt.encode(payload, 'secret', algorithm='HS256')
+    response = Response(status=http_status)
+    response.set_cookie(
+        key='jwt',
+        value=token,
+        httponly=True,
+        max_age=60 * 60 * 24 * 365,
+        samesite='None',
+        secure=False,
+        domain=None,
+        path='/',
+    )
+    response.data = {
+        'jwt': token,
+        'username': user.username,
+        'user_id': user.id,
+        'email': user.email,
+        'message': message,
+    }
+    return response
+
 
 # Check Existing User Data View
 class CheckExistingUserData(APIView):
@@ -78,27 +106,33 @@ class SignUpUser(APIView):
             if is_resend and not email:
                 return Response({'error': 'Email is required'}, status=status.HTTP_400_BAD_REQUEST)
 
-            # Handle resend OTP case
+            # Handle resend OTP case (disabled — restore when re-enabling OTP)
             if is_resend:
-                # Check if user exists
-                user = User.objects.filter(email=email).first()
-                if not user:
-                    return Response({'error': 'User not found. Please sign up first.'}, status=status.HTTP_404_NOT_FOUND)
+                if False:
+                    # Check if user exists
+                    user = User.objects.filter(email=email).first()
+                    if not user:
+                        return Response({'error': 'User not found. Please sign up first.'}, status=status.HTTP_404_NOT_FOUND)
 
-                # Import OTP utilities
-                from .utilities.otp_utils import create_and_send_otp
+                    # Import OTP utilities
+                    from .utilities.otp_utils import create_and_send_otp
 
-                # Create and send OTP
-                success, otp_obj, message = create_and_send_otp(email)
+                    # Create and send OTP
+                    success, otp_obj, message = create_and_send_otp(email)
 
-                if success:
-                    return Response({
-                        'message': 'OTP sent successfully.',
-                        'email': email
-                    }, status=status.HTTP_200_OK)
-                else:
-                    return Response({'error': f'Failed to send OTP: {message}'},
-                                  status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+                    if success:
+                        return Response({
+                            'message': 'OTP sent successfully.',
+                            'email': email
+                        }, status=status.HTTP_200_OK)
+                    else:
+                        return Response({'error': f'Failed to send OTP: {message}'},
+                                      status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+                return Response(
+                    {'error': 'OTP resend is disabled. Email verification is not required.'},
+                    status=status.HTTP_400_BAD_REQUEST,
+                )
 
             # Handle new signup case
             # Serialize the data
@@ -108,23 +142,34 @@ class SignUpUser(APIView):
                 # Save the data
                 user = serializer.save()
 
-                # Import OTP utilities
-                from .utilities.otp_utils import create_and_send_otp
+                if False:
+                    # Import OTP utilities
+                    from .utilities.otp_utils import create_and_send_otp
 
-                # Create and send OTP
-                success, otp_obj, message = create_and_send_otp(email)
+                    # Create and send OTP
+                    success, otp_obj, message = create_and_send_otp(email)
 
-                if success:
-                    return Response({
-                        'message': 'User created successfully. OTP sent to email.',
-                        'user_id': user.id,
-                        'email': email
-                    }, status=status.HTTP_201_CREATED)
-                else:
-                    # If OTP sending fails, delete the user and return error
-                    user.delete()
-                    return Response({'error': f'User created but failed to send OTP: {message}'},
-                                  status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+                    if success:
+                        return Response({
+                            'message': 'User created successfully. OTP sent to email.',
+                            'user_id': user.id,
+                            'email': email
+                        }, status=status.HTTP_201_CREATED)
+                    else:
+                        # If OTP sending fails, delete the user and return error
+                        user.delete()
+                        return Response({'error': f'User created but failed to send OTP: {message}'},
+                                      status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+                user.is_email_verified = True
+                user.is_active = True
+                user.last_login = timezone.now()
+                user.save(update_fields=['is_email_verified', 'is_active', 'last_login'])
+                return _issue_jwt_auth_response(
+                    user,
+                    'User created successfully.',
+                    status.HTTP_201_CREATED,
+                )
 
             # Return the errors
             return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
@@ -192,75 +237,81 @@ class CleanupSignup(APIView):
             return Response({'error': str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
 
-# OTP Verification View
+# OTP Verification View (endpoint kept; OTP path disabled — see OTP_IMPLEMENTATION_RESTORE.md in connectWeb)
 class VerifyOTP(APIView):
     def post(self, request):
-        email = request.data.get('email')
-        otp_code = request.data.get('otp_code')
+        if False:
+            email = request.data.get('email')
+            otp_code = request.data.get('otp_code')
 
-        if not email:
-            return Response({'error': 'Email is required'}, status=status.HTTP_400_BAD_REQUEST)
+            if not email:
+                return Response({'error': 'Email is required'}, status=status.HTTP_400_BAD_REQUEST)
 
-        if not otp_code:
-            return Response({'error': 'OTP code is required'}, status=status.HTTP_400_BAD_REQUEST)
+            if not otp_code:
+                return Response({'error': 'OTP code is required'}, status=status.HTTP_400_BAD_REQUEST)
 
-        try:
-            # Import OTP utilities
-            from .utilities.otp_utils import verify_otp
+            try:
+                # Import OTP utilities
+                from .utilities.otp_utils import verify_otp
 
-            # Verify the OTP
-            success, message = verify_otp(email, otp_code)
+                # Verify the OTP
+                success, message = verify_otp(email, otp_code)
 
-            if success:
-                # Find the user by email
-                user = User.objects.filter(email=email).first()
+                if success:
+                    # Find the user by email
+                    user = User.objects.filter(email=email).first()
 
-                if not user:
-                    return Response({'error': 'User not found'}, status=status.HTTP_404_NOT_FOUND)
+                    if not user:
+                        return Response({'error': 'User not found'}, status=status.HTTP_404_NOT_FOUND)
 
-                # Mark user as verified and active
-                user.is_email_verified = True
-                user.is_active = True
-                user.last_login = timezone.now()
-                user.save(update_fields=['is_email_verified', 'is_active', 'last_login'])
+                    # Mark user as verified and active
+                    user.is_email_verified = True
+                    user.is_active = True
+                    user.last_login = timezone.now()
+                    user.save(update_fields=['is_email_verified', 'is_active', 'last_login'])
 
-                # Create JWT token now that OTP is verified
-                payload = {
-                    'id': user.id,
-                    'exp': datetime.datetime.utcnow() + datetime.timedelta(days=7),
-                    'iat': datetime.datetime.utcnow(),
-                }
+                    # Create JWT token now that OTP is verified
+                    payload = {
+                        'id': user.id,
+                        'exp': datetime.datetime.utcnow() + datetime.timedelta(days=7),
+                        'iat': datetime.datetime.utcnow(),
+                    }
 
-                token = jwt.encode(payload, 'secret', algorithm='HS256')
+                    token = jwt.encode(payload, 'secret', algorithm='HS256')
 
-                response = Response()
-                response.set_cookie(
-                    key='jwt',
-                    value=token,
-                    httponly=True,
-                    max_age=60 * 60 * 24 * 365,  # 365 days in seconds
-                    samesite='None',
-                    secure=False,  # Keep False for local development without HTTPS
-                    domain=None,
-                    path='/',
+                    response = Response()
+                    response.set_cookie(
+                        key='jwt',
+                        value=token,
+                        httponly=True,
+                        max_age=60 * 60 * 24 * 365,  # 365 days in seconds
+                        samesite='None',
+                        secure=False,  # Keep False for local development without HTTPS
+                        domain=None,
+                        path='/',
+                    )
+
+                    response.data = {
+                        'jwt': token,
+                        'username': user.username,
+                        'user_id': user.id,
+                        'message': 'OTP verified successfully. Account activated.',
+                    }
+
+                    return response
+                else:
+                    return Response({'error': message}, status=status.HTTP_400_BAD_REQUEST)
+
+            except Exception as e:
+                return Response(
+                    {'error': f'An error occurred during OTP verification: {str(e)}'},
+                    status=status.HTTP_500_INTERNAL_SERVER_ERROR,
                 )
 
-                response.data = {
-                    'jwt': token,
-                    'username': user.username,
-                    'user_id': user.id,
-                    'message': 'OTP verified successfully. Account activated.',
-                }
-
-                return response
-            else:
-                return Response({'error': message}, status=status.HTTP_400_BAD_REQUEST)
-
-        except Exception as e:
-            return Response(
-                {'error': f'An error occurred during OTP verification: {str(e)}'},
-                status=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            )
+        return Response(
+            {'error': 'OTP verification is disabled. Sign up or log in to receive a session directly.'},
+            status=status.HTTP_501_NOT_IMPLEMENTED,
+        )
 
 
 # Check Username Availability View
@@ -298,32 +349,39 @@ class LoginUser(APIView):
         # Checking if the password is correct
         if not user.check_password(password):
             return Response({'error': 'Invalid password'}, status=status.HTTP_401_UNAUTHORIZED)
-        
-        # At this point credentials are valid. Do NOT issue JWT yet.
-        # Instead, send an OTP that must be verified before authentication is completed.
-        try:
-            from .utilities.otp_utils import create_and_send_otp
 
-            success, otp_obj, message = create_and_send_otp(email)
-            if not success:
+        if False:
+            # At this point credentials are valid. Do NOT issue JWT yet.
+            # Instead, send an OTP that must be verified before authentication is completed.
+            try:
+                from .utilities.otp_utils import create_and_send_otp
+
+                success, otp_obj, message = create_and_send_otp(email)
+                if not success:
+                    return Response(
+                        {'error': f'Failed to send OTP: {message}'},
+                        status=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                    )
+
                 return Response(
-                    {'error': f'Failed to send OTP: {message}'},
+                    {
+                        'otp_required': True,
+                        'email': email,
+                        'message': 'OTP sent to your email. Please verify to complete login.',
+                    },
+                    status=status.HTTP_200_OK,
+                )
+            except Exception as e:
+                return Response(
+                    {'error': f'An error occurred while sending OTP: {str(e)}'},
                     status=status.HTTP_500_INTERNAL_SERVER_ERROR,
                 )
 
-            return Response(
-                {
-                    'otp_required': True,
-                    'email': email,
-                    'message': 'OTP sent to your email. Please verify to complete login.',
-                },
-                status=status.HTTP_200_OK,
-            )
-        except Exception as e:
-            return Response(
-                {'error': f'An error occurred while sending OTP: {str(e)}'},
-                status=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            )
+        user.last_login = timezone.now()
+        if not user.is_email_verified:
+            user.is_email_verified = True
+        user.save(update_fields=['last_login', 'is_email_verified'])
+        return _issue_jwt_auth_response(user, 'Login successful.')
 
 # Verify Login View
 class VerifyLogin(APIView):
@@ -407,10 +465,11 @@ class UserView(APIView):
             print("User not found in database")
             raise AuthenticationFailed('User not found')
 
-        # Enforce email verification via OTP before exposing user data
-        if not getattr(user, 'is_email_verified', False):
-            print("User email not verified via OTP")
-            raise AuthenticationFailed('Email not verified via OTP')
+        if False:
+            # Enforce email verification via OTP before exposing user data
+            if not getattr(user, 'is_email_verified', False):
+                print("User email not verified via OTP")
+                raise AuthenticationFailed('Email not verified via OTP')
 
         # Serializing the user
         serializer = UserSerializer(user)

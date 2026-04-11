@@ -1,3 +1,5 @@
+# OTP helpers are unused while email OTP is disabled in views (see somaapp/views.py + connectWeb OTP_IMPLEMENTATION_RESTORE.md).
+# Kept for restoring the OTP flow later.
 import random
 import string
 import os

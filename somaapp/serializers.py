@@ -2,7 +2,7 @@ from rest_framework import serializers
 from .models import User, Post, Parties, Candidates
 
 
-# User Serializer
+# User Serializer (signup creates users; OTP email flow is optional — see views.SignUpUser)
 class UserSerializer(serializers.ModelSerializer):
     class Meta:
         # Model to serialize
